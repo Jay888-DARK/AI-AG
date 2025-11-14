@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Conversational Chatbot</title>
+    <!-- Load Tailwind CSS for modern, responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load highlight.js for clean code block formatting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <!-- Optional: Load Markdown-it for parsing Markdown content (including code blocks) -->
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
+    <style>
+        /* Custom scrollbar styling for the chat container */
+        #chat-window::-webkit-scrollbar {
+            width: 8px;
+            background-color: #f5f5f5;
+        }
+
+        #chat-window::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1; /* Slate-300 */
+            border-radius: 4px;
+        }
+
+        /* Ensure the input area doesn't get squeezed */
+        #chat-container {
+            min-height: 80vh;
+            max-height: 90vh;
+        }
+
+        /* Styling for the user message bubble */
+        .user-message {
+            background-color: #3b82f6; /* Blue-500 */
+            color: white;
+            border-radius: 1rem 1rem 0.5rem 1rem;
+        }
+
+        /* Styling for the model message bubble */
+        .model-message {
+            background-color: #f3f4f6; /* Gray-100 */
+            color: #1f2937; /* Gray-800 */
+            border-radius: 0.5rem 1rem 1rem 1rem;
+        }
+
+        /* Overriding highlight.js background to fit the model bubble color */
+        .model-message pre {
+            background-color: #e5e7eb !important; /* Gray-200 */
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-top: 0.5rem;
+            overflow-x: auto;
+        }
+
+        /* Set default font */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 flex items-center justify-center min-h-screen p-4">
+
+    <!-- Main Chat Container Card -->
+    <div id="chat-container" class="w-full max-w-2xl bg-white shadow-xl rounded-xl flex flex-col">
+        
+        <!-- Header -->
+        <header class="p-4 bg-white border-b border-gray-200 sticky top-0 rounded-t-xl z-10">
+            <h1 class="text-xl font-bold text-gray-800 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-indigo-600 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 10v2M19 10v2M3 10h2m14 0h2M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                </svg>
+                Gemini Assistant
+            </h1>
+        </header>
+
+        <!-- API Key Input Modal (Hidden by default) -->
+        <div id="api-key-modal" class="p-4 bg-yellow-100 border-b border-yellow-300 text-sm text-yellow-800 flex flex-col sm:flex-row items-start sm:items-center justify-between">
+            <p>Please enter your **Gemini API Key** to start chatting. Keep this key secure!</p>
+            <div class="flex mt-2 sm:mt-0 w-full sm:w-auto">
+                <input type="password" id="api-key-input" placeholder="Enter API Key (e.g., AIza...)" class="w-full sm:w-60 px-3 py-1 border border-yellow-400 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 text-gray-800">
+                <button onclick="saveApiKey()" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold px-4 py-1 rounded-r-lg transition duration-150 ease-in-out">Save</button>
+            </div>
+        </div>
+        
+        <!-- Chat Window (Scrollable content area) -->
+        <div id="chat-window" class="flex-grow p-4 space-y-4 overflow-y-auto bg-gray-50">
+            <!-- Initial welcome message -->
+            <div class="flex justify-start">
+                <div class="max-w-xs md:max-w-md p-3 model-message shadow-md">
+                    <p>Hello! I'm an AI assistant powered by Google Gemini. Ask me anything! For better results, make sure to set your API key above.</p>
+                </div>
+            </div>
+            <!-- Messages will be injected here -->
+        </div>
+
+        <!-- User Input Area -->
+        <footer class="p-4 bg-white border-t border-gray-200 rounded-b-xl">
+            <div class="flex items-center">
+                <input type="text" id="user-input" placeholder="Type your message here..."
+                       class="flex-grow px-4 py-2 border border-gray-300 rounded-l-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                       onkeydown="if (event.key === 'Enter') sendMessage()">
+                
+                <button id="send-button" onclick="sendMessage()"
+                        class="px-6 py-2 bg-indigo-600 text-white font-semibold rounded-r-xl hover:bg-indigo-700 transition duration-150 ease-in-out flex items-center disabled:opacity-50" disabled>
+                    <span id="send-text">Send</span>
+                    <svg id="spinner" class="animate-spin h-5 w-5 text-white ml-2 hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </button>
+            </div>
+            <p id="error-message" class="text-sm text-red-500 mt-2 hidden">Error: Something went wrong.</p>
+        </footer>
+
+    </div>
+
+    <script>
+        // --- Core Configuration and State Management ---
+        const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent";
+        const MODEL = "gemini-2.5-flash-preview-09-2025";
+        const INITIAL_SYSTEM_PROMPT = "You are a friendly, helpful, and concise AI assistant. Format code or commands using markdown code blocks. Keep the tone encouraging.";
+
+        let apiKey = localStorage.getItem('geminiApiKey'); // Load API key from local storage
+        let chatHistory = []; // Stores conversation history for context
+        let isSending = false; // Flag to prevent multiple concurrent requests
+        let errorCount = 0; // For exponential backoff retry logic
+
+        // Initialize Markdown parser and highlight.js
+        const md = window.markdownit();
+
+        // --- DOM Elements ---
+        const chatWindow = document.getElementById('chat-window');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+        const spinner = document.getElementById('spinner');
+        const sendText = document.getElementById('send-text');
+        const errorMessage = document.getElementById('error-message');
+        const apiKeyModal = document.getElementById('api-key-modal');
+        const apiKeyInput = document.getElementById('api-key-input');
+
+        // --- Initialization and UI Setup ---
+
+        /**
+         * Checks if the API key is present and updates the UI accordingly.
+         */
+        function checkApiKey() {
+            if (apiKey) {
+                apiKeyModal.classList.add('hidden');
+                sendButton.disabled = false;
+                userInput.placeholder = "Type your message here...";
+                chatHistory.push({
+                    role: "systemInstruction",
+                    parts: [{ text: INITIAL_SYSTEM_PROMPT }]
+                });
+            } else {
+                apiKeyModal.classList.remove('hidden');
+                sendButton.disabled = true;
+                userInput.placeholder = "Enter API Key above to start chat.";
+            }
+        }
+
+        /**
+         * Saves the API key to local storage and updates the state.
+         */
+        function saveApiKey() {
+            const key = apiKeyInput.value.trim();
+            if (key) {
+                apiKey = key;
+                localStorage.setItem('geminiApiKey', key);
+                checkApiKey();
+                apiKeyInput.value = ''; // Clear input after saving
+                displayMessage('AI Assistant', 'API Key saved successfully! Ready to chat.', 'model-message');
+            } else {
+                displayError("Please enter a valid API Key.");
+            }
+        }
+
+        /**
+         * Displays a message in the chat window.
+         * @param {string} role - 'You' or 'AI Assistant'.
+         * @param {string} text - The message content (can be Markdown).
+         * @param {string} typeClass - CSS class for styling ('user-message' or 'model-message').
+         */
+        function displayMessage(role, text, typeClass) {
+            const messageWrapper = document.createElement('div');
+            messageWrapper.className = `flex ${role === 'You' ? 'justify-end' : 'justify-start'}`;
+
+            const messageBubble = document.createElement('div');
+            messageBubble.className = `max-w-xs md:max-w-md p-3 shadow-lg break-words ${typeClass}`;
+            
+            // Use markdown-it to parse text, especially for code blocks
+            messageBubble.innerHTML = md.render(text);
+
+            messageWrapper.appendChild(messageBubble);
+            chatWindow.appendChild(messageWrapper);
+
+            // Highlight all code blocks after rendering markdown
+            messageBubble.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+
+            // Scroll to the bottom to show the newest message
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        /**
+         * Shows an error message temporarily.
+         * @param {string} message - The error text.
+         */
+        function displayError(message) {
+            errorMessage.textContent = `Error: ${message}`;
+            errorMessage.classList.remove('hidden');
+            setTimeout(() => {
+                errorMessage.classList.add('hidden');
+            }, 5000);
+        }
+
+        /**
+         * Toggles the UI state for sending/loading.
+         * @param {boolean} isLoading - True if loading, false otherwise.
+         */
+        function toggleLoading(isLoading) {
+            isSending = isLoading;
+            userInput.disabled = isLoading;
+            sendButton.disabled = isLoading || !apiKey;
+            spinner.classList.toggle('hidden', !isLoading);
+            sendText.textContent = isLoading ? 'Thinking...' : 'Send';
+        }
+
+        // --- Core Chat Logic ---
+
+        /**
+         * Sends the user's message and retrieves the response from the Gemini API.
+         */
+        async function sendMessage() {
+            if (isSending || !apiKey) return;
+
+            const userText = userInput.value.trim();
+            if (!userText) return;
+
+            // 1. Add user message to UI and history
+            displayMessage('You', userText, 'user-message');
+            userInput.value = '';
+            
+            // Add user turn to the conversation history
+            chatHistory.push({
+                role: "user",
+                parts: [{ text: userText }]
+            });
+
+            toggleLoading(true);
+
+            // --- API Request Setup ---
+            const payload = {
+                // The contents array holds the entire chat history for context
+                contents: chatHistory,
+                // System Instruction is defined separately for the model's persona
+                systemInstruction: {
+                    parts: [{ text: INITIAL_SYSTEM_PROMPT }]
+                },
+            };
+
+            const apiUrl = `${API_URL}?key=${apiKey}`;
+            let responseText = "Sorry, I encountered an unknown error.";
+            let success = false;
+            let retryDelay = 500; // Initial delay for backoff
+
+            // 2. Perform API call with Exponential Backoff
+            while (errorCount < 3 && !success) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    // Check for HTTP errors (e.g., 400, 403, 500)
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error?.message || `HTTP Error: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    // Check for content in the response
+                    const candidate = result.candidates?.[0];
+                    if (candidate && candidate.content?.parts?.[0]?.text) {
+                        responseText = candidate.content.parts[0].text;
+                        success = true;
+                        errorCount = 0; // Reset error count on success
+                    } else {
+                        // Handle cases where API returns 200 but no text content
+                        throw new Error("Received an empty response from the model.");
+                    }
+
+                } catch (error) {
+                    errorCount++;
+                    responseText = `API Error: ${error.message}. Retrying in ${retryDelay / 1000}s...`;
+                    displayError(responseText);
+
+                    if (errorCount < 3) {
+                        await new Promise(resolve => setTimeout(resolve, retryDelay));
+                        retryDelay *= 2; // Exponential backoff
+                    } else {
+                        // If all retries fail, break the loop and show final error
+                        responseText = `Failed to get a response after multiple retries. ${error.message}`;
+                        chatHistory.pop(); // Remove the last user message from history if it failed
+                        break;
+                    }
+                }
+            }
+
+            // 3. Display model response
+            toggleLoading(false);
+            displayMessage('AI Assistant', responseText, 'model-message');
+            
+            // 4. Update chat history with successful model response
+            if (success) {
+                chatHistory.push({
+                    role: "model",
+                    parts: [{ text: responseText }]
+                });
+            }
+        }
+
+        // --- Start Application ---
+        document.addEventListener('DOMContentLoaded', checkApiKey);
+
+    </script>
+</body>
+</html>
